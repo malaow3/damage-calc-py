@@ -31,16 +31,30 @@ class Pokemon:
     nature: str
     evs: None | Stats
     ivs: None | Stats
-    move: str
+    move: str = ""
     level: int = 100
     item: None | str = None
     moves: list[str] = field(default_factory=list)
     tera_type: None | str = None
     is_tera: bool = False
+    is_single_target: bool = True
 
     def to_json(self):
+        if self.name == "Urshifu-Single-Strike":
+            name = "Urshifu"
+        elif self.name == "Indeedee-Male":
+            name = "Indeedee"
+        elif self.name == "Indeedee-Female":
+            name = "Indeedee-F"
+        elif self.name == "Tornadus-Incarnate":
+            name = "Tornadus"
+        elif self.name == "Landorus-Incarnate":
+            name = "Landorus"
+        else:
+            name = self.name
+
         json_dict: dict[str, str | dict[str, int | None] | int] = {
-            "name": self.name,
+            "name": name,
             "ability": self.ability,
             "nature": self.nature,
             "move": self.move,
@@ -61,6 +75,63 @@ class Pokemon:
             json_dict["evs"] = self.evs.to_json()
 
         return json_dict
+
+
+def csv_row_to_pokemon(row: list[str]) -> tuple[Pokemon, Pokemon]:
+    # ,Spread,Category
+    aname = row[0]
+    a_move = row[1]
+    a_ability = row[2]
+    a_item = row[3]
+    a_nature = row[4]
+    a_hp = int(row[5])
+    a_attack = int(row[6])
+    a_defense = int(row[7])
+    a_special_attack = int(row[8])
+    a_special_defense = int(row[9])
+    a_speed = int(row[10])
+    attacking = Pokemon(
+        name=aname,
+        move=a_move,
+        ability=a_ability,
+        item=a_item,
+        nature=a_nature,
+        evs=Stats(
+            a_hp, a_attack, a_defense, a_special_attack, a_special_defense, a_speed
+        ),
+        ivs=None,
+        level=50,
+    )
+
+    dname = row[11]
+    d_ability = row[12]
+    d_item = row[13]
+    d_nature = row[14]
+    d_hp = int(row[15])
+    d_attack = int(row[16])
+    d_defense = int(row[17])
+    d_special_attack = int(row[18])
+    d_special_defense = int(row[19])
+    d_speed = int(row[20])
+
+    try:
+        is_single_target = float(row[21]) == 1
+    except Exception:
+        is_single_target = False
+
+    attacking.is_single_target = is_single_target
+    defending = Pokemon(
+        name=dname,
+        ability=d_ability,
+        item=d_item,
+        nature=d_nature,
+        evs=Stats(
+            d_hp, d_attack, d_defense, d_special_attack, d_special_defense, d_speed
+        ),
+        ivs=None,
+        level=50,
+    )
+    return (attacking, defending)
 
 
 def pokemon_from_paste(paste: str) -> Pokemon:
@@ -153,53 +224,41 @@ def pokemon_from_paste(paste: str) -> Pokemon:
 
 
 def main():
-    abomasnow = """Abomasnow @ Heavy-Duty Boots
-Level: 50
-Bold Nature
-Tera Type: Water
-Ability: Snow Warning
-EVs: 248 HP / 252 Def / 8 Spe
-- Blizzard
-- Giga Drain
-- Earth Power
-- Aurora Veil
-"""
+    with open("data.csv", "r") as f:
+        data = f.read()
+    lines = data.split("\n")
+    # skip header
+    lines = lines[1:]
 
-    houndoom = """Houndoom @ Houndoominite
-Level: 50
-Timid Nature
-Ability: Flash Fire
-EVs: 252 SpA / 4 SpD / 252 Spe
-IVs: 0 Atk
-- Dark Pulse
-- Fire Blast
-- Sludge Bomb
-- Nasty Plot
-"""
+    rolls: list[list[int]] = []
+    for line in lines:
+        row = line.split(",")
+        attacking, defending = csv_row_to_pokemon(row)
 
-    attacking = pokemon_from_paste(houndoom)
-    attacking.move = attacking.moves[1]
-    defending = pokemon_from_paste(abomasnow)
-    defending.is_tera = True
-
-    with open("data.json", "w") as f:
-        _ = f.write(
-            json.dumps(
-                {
-                    "attacking_pokemon": attacking.to_json(),
-                    "defending_pokemon": defending.to_json(),
-                }
+        with open("data.json", "w") as f:
+            _ = f.write(
+                json.dumps(
+                    {
+                        "attacking_pokemon": attacking.to_json(),
+                        "defending_pokemon": defending.to_json(),
+                    }
+                )
             )
-        )
 
-    child = subprocess.run(["bun", "run", "index.ts"])
-    if child.returncode != 0:
-        raise Exception("Failed to run calc")
+        child = subprocess.run(["bun", "run", "index.ts"])
+        if child.returncode != 0:
+            print(attacking.name, defending.name)
+            raise Exception("Failed to run calc")
 
-    rolls: list[int] = []
-    with open("output.json", "r") as f:
-        rolls = cast(list[int], json.load(f))
-    print(rolls)
+        local_rolls: list[int] = []
+        with open("output.json", "r") as f:
+            local_rolls = cast(list[int], json.load(f))
+        rolls.append(local_rolls)
+
+    with open("rolls.csv", "w") as f:
+        for roll in rolls:
+            roll_str = list(map(lambda x: str(x), roll))
+            _ = f.write(",".join(roll_str) + "\n")
 
 
 if __name__ == "__main__":

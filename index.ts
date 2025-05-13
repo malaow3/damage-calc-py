@@ -1,5 +1,5 @@
-import { calculate, Generations, Pokemon, Move } from "@smogon/calc";
-import type { TypeName } from "@smogon/calc/dist/data/interface";
+import { calculate, Generations, Pokemon, Move, Field } from "@smogon/calc";
+import type { GameType, TypeName } from "@smogon/calc/dist/data/interface";
 
 type Stats = {
   hp?: number;
@@ -27,6 +27,7 @@ type PokemonData = {
   evs?: Stats;
   ivs?: Stats;
   move: string;
+  is_single_target: boolean;
   level: number;
   tera_type?: string;
   is_tera: boolean;
@@ -72,6 +73,8 @@ async function main() {
     attacking_tera_type = attacking_pokemon.tera_type as unknown as TypeName;
   }
 
+  const game_type = attacking_pokemon.is_single_target ? "Singles" : "Doubles";
+
   const defending_pokemon = data_json.defending_pokemon;
   const defending_stats = setStats(defending_pokemon.evs ?? {});
   const defending_ivs = setStats(defending_pokemon.ivs ?? {});
@@ -102,6 +105,7 @@ async function main() {
       teraType: defending_tera_type,
     }),
     new Move(gen, attacking_pokemon.move),
+    new Field({ gameType: game_type }),
   );
 
   const rolls = result.damage;
