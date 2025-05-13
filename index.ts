@@ -1,5 +1,5 @@
 import { calculate, Generations, Pokemon, Move, Field } from "@smogon/calc";
-import type { GameType, TypeName } from "@smogon/calc/dist/data/interface";
+import type { TypeName } from "@smogon/calc/dist/data/interface";
 
 type Stats = {
   hp?: number;
@@ -62,56 +62,65 @@ function setStats(raw_stats: Stats): CalcStats {
 }
 
 async function main() {
-  const data_raw = Bun.file("data.json");
-  const data_json = (await data_raw.json()) as unknown as DataFile;
+  const input = process.argv[2] as string;
+  const data_json = JSON.parse(input) as unknown as DataFile[];
 
-  const attacking_pokemon = data_json.attacking_pokemon;
-  const attacking_stats = setStats(attacking_pokemon.evs ?? {});
-  const attacking_ivs = setStats(attacking_pokemon.ivs ?? {});
-  let attacking_tera_type: TypeName | undefined = undefined;
-  if (attacking_pokemon.is_tera) {
-    attacking_tera_type = attacking_pokemon.tera_type as unknown as TypeName;
+  const return_rolls: number[][] = [];
+
+  for (const data of data_json) {
+    const attacking_pokemon = data.attacking_pokemon;
+    const attacking_stats = setStats(attacking_pokemon.evs ?? {});
+    const attacking_ivs = setStats(attacking_pokemon.ivs ?? {});
+    let attacking_tera_type: TypeName | undefined = undefined;
+    if (attacking_pokemon.is_tera) {
+      attacking_tera_type = attacking_pokemon.tera_type as unknown as TypeName;
+    }
+
+    const game_type = attacking_pokemon.is_single_target
+      ? "Singles"
+      : "Doubles";
+
+    const defending_pokemon = data.defending_pokemon;
+    const defending_stats = setStats(defending_pokemon.evs ?? {});
+    const defending_ivs = setStats(defending_pokemon.ivs ?? {});
+    let defending_tera_type: TypeName | undefined = undefined;
+    if (defending_pokemon.is_tera) {
+      defending_tera_type = defending_pokemon.tera_type as unknown as TypeName;
+    }
+
+    const gen = Generations.get(9);
+    const result = calculate(
+      gen,
+      new Pokemon(gen, attacking_pokemon.name, {
+        level: attacking_pokemon.level,
+        ability: attacking_pokemon.ability,
+        item: attacking_pokemon.item,
+        nature: attacking_pokemon.nature,
+        evs: attacking_stats,
+        ivs: attacking_ivs,
+        teraType: attacking_tera_type,
+      }),
+      new Pokemon(gen, defending_pokemon.name, {
+        level: defending_pokemon.level,
+        ability: defending_pokemon.ability,
+        item: defending_pokemon.item,
+        nature: defending_pokemon.nature,
+        evs: defending_stats,
+        ivs: defending_ivs,
+        teraType: defending_tera_type,
+      }),
+      new Move(gen, attacking_pokemon.move),
+      new Field({ gameType: game_type }),
+    );
+
+    const rolls = result.damage;
+    if (typeof rolls === "number") {
+      return_rolls.push([rolls]);
+    } else {
+      return_rolls.push(rolls as number[]);
+    }
   }
-
-  const game_type = attacking_pokemon.is_single_target ? "Singles" : "Doubles";
-
-  const defending_pokemon = data_json.defending_pokemon;
-  const defending_stats = setStats(defending_pokemon.evs ?? {});
-  const defending_ivs = setStats(defending_pokemon.ivs ?? {});
-  let defending_tera_type: TypeName | undefined = undefined;
-  if (defending_pokemon.is_tera) {
-    defending_tera_type = defending_pokemon.tera_type as unknown as TypeName;
-  }
-
-  const gen = Generations.get(9);
-  const result = calculate(
-    gen,
-    new Pokemon(gen, attacking_pokemon.name, {
-      level: attacking_pokemon.level,
-      ability: attacking_pokemon.ability,
-      item: attacking_pokemon.item,
-      nature: attacking_pokemon.nature,
-      evs: attacking_stats,
-      ivs: attacking_ivs,
-      teraType: attacking_tera_type,
-    }),
-    new Pokemon(gen, defending_pokemon.name, {
-      level: defending_pokemon.level,
-      ability: defending_pokemon.ability,
-      item: defending_pokemon.item,
-      nature: defending_pokemon.nature,
-      evs: defending_stats,
-      ivs: defending_ivs,
-      teraType: defending_tera_type,
-    }),
-    new Move(gen, attacking_pokemon.move),
-    new Field({ gameType: game_type }),
-  );
-
-  const rolls = result.damage;
-
-  const output = Bun.file("output.json");
-  await output.write(JSON.stringify(rolls));
+  console.log(JSON.stringify(return_rolls));
 }
 
 main();

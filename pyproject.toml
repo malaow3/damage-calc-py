@@ -4,7 +4,12 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "asyncio>=3.4.3",
+]
 
-[[tools.basedpyright]]
+[tool.basedpyright]
 typeCheckingMode = "basic"
+
+[tool.ty.environment]
+python = "./.venv"

@@ -1,7 +1,10 @@
+import asyncio
 import json
 import subprocess
 from dataclasses import dataclass, field
-from typing import cast
+from typing import Any, cast
+
+# CONCURRENCY = 8
 
 
 @dataclass
@@ -79,59 +82,62 @@ class Pokemon:
 
 def csv_row_to_pokemon(row: list[str]) -> tuple[Pokemon, Pokemon]:
     # ,Spread,Category
-    aname = row[0]
-    a_move = row[1]
-    a_ability = row[2]
-    a_item = row[3]
-    a_nature = row[4]
-    a_hp = int(row[5])
-    a_attack = int(row[6])
-    a_defense = int(row[7])
-    a_special_attack = int(row[8])
-    a_special_defense = int(row[9])
-    a_speed = int(row[10])
-    attacking = Pokemon(
-        name=aname,
-        move=a_move,
-        ability=a_ability,
-        item=a_item,
-        nature=a_nature,
-        evs=Stats(
-            a_hp, a_attack, a_defense, a_special_attack, a_special_defense, a_speed
-        ),
-        ivs=None,
-        level=50,
-    )
-
-    dname = row[11]
-    d_ability = row[12]
-    d_item = row[13]
-    d_nature = row[14]
-    d_hp = int(row[15])
-    d_attack = int(row[16])
-    d_defense = int(row[17])
-    d_special_attack = int(row[18])
-    d_special_defense = int(row[19])
-    d_speed = int(row[20])
-
     try:
-        is_single_target = float(row[21]) == 1
-    except Exception:
-        is_single_target = False
+        aname = row[0]
+        a_move = row[1]
+        a_ability = row[2]
+        a_item = row[3]
+        a_nature = row[4]
+        a_hp = int(row[5])
+        a_attack = int(row[6])
+        a_defense = int(row[7])
+        a_special_attack = int(row[8])
+        a_special_defense = int(row[9])
+        a_speed = int(row[10])
+        attacking = Pokemon(
+            name=aname,
+            move=a_move,
+            ability=a_ability,
+            item=a_item,
+            nature=a_nature,
+            evs=Stats(
+                a_hp, a_attack, a_defense, a_special_attack, a_special_defense, a_speed
+            ),
+            ivs=None,
+            level=50,
+        )
 
-    attacking.is_single_target = is_single_target
-    defending = Pokemon(
-        name=dname,
-        ability=d_ability,
-        item=d_item,
-        nature=d_nature,
-        evs=Stats(
-            d_hp, d_attack, d_defense, d_special_attack, d_special_defense, d_speed
-        ),
-        ivs=None,
-        level=50,
-    )
-    return (attacking, defending)
+        dname = row[11]
+        d_ability = row[12]
+        d_item = row[13]
+        d_nature = row[14]
+        d_hp = int(row[15])
+        d_attack = int(row[16])
+        d_defense = int(row[17])
+        d_special_attack = int(row[18])
+        d_special_defense = int(row[19])
+        d_speed = int(row[20])
+
+        try:
+            is_single_target = float(row[21]) == 1
+        except Exception:
+            is_single_target = False
+
+        attacking.is_single_target = is_single_target
+        defending = Pokemon(
+            name=dname,
+            ability=d_ability,
+            item=d_item,
+            nature=d_nature,
+            evs=Stats(
+                d_hp, d_attack, d_defense, d_special_attack, d_special_defense, d_speed
+            ),
+            ivs=None,
+            level=50,
+        )
+        return (attacking, defending)
+    except Exception:
+        raise Exception(f"Row failed: {row}")
 
 
 def pokemon_from_paste(paste: str) -> Pokemon:
@@ -223,37 +229,75 @@ def pokemon_from_paste(paste: str) -> Pokemon:
     )
 
 
-def main():
+async def process_row(
+    idx: int, line: str, rolls_dict: dict[int, list[int]], sem: asyncio.Semaphore
+):
+    async with sem:
+        row = line.split(",")
+        attacking, defending = csv_row_to_pokemon(row)
+
+        input = json.dumps(
+            {
+                "attacking_pokemon": attacking.to_json(),
+                "defending_pokemon": defending.to_json(),
+            }
+        )
+        child = subprocess.run(["bun", "run", "index.ts", input], capture_output=True)
+        if child.returncode != 0:
+            print(attacking.name, defending.name)
+            raise Exception("Failed to run calc")
+
+        output: str = child.stdout.decode("utf-8").strip()
+
+        local_rolls: list[int] = []
+        local_rolls = cast(list[int], json.loads(output))
+        rolls_dict[idx] = local_rolls
+
+
+def process_rows(lines: list[str]) -> list[list[int]]:
+    data: list[dict[str, Any]] = []
+    for line in lines:
+        if len(line) == 0:
+            break
+        row = line.split(",")
+        attacking, defending = csv_row_to_pokemon(row)
+        data.append(
+            {
+                "attacking_pokemon": attacking.to_json(),
+                "defending_pokemon": defending.to_json(),
+            }
+        )
+
+    child = subprocess.run(
+        ["bun", "run", "index.ts", json.dumps(data)], capture_output=True
+    )
+    if child.returncode != 0:
+        raise Exception("Failed to run calc")
+
+    output: str = child.stdout.decode("utf-8").strip()
+
+    local_rolls: list[list[int]] = []
+    local_rolls = cast(list[list[int]], json.loads(output))
+    return local_rolls
+
+
+async def main():
     with open("data.csv", "r") as f:
         data = f.read()
     lines = data.split("\n")
     # skip header
     lines = lines[1:]
 
-    rolls: list[list[int]] = []
-    for line in lines:
-        row = line.split(",")
-        attacking, defending = csv_row_to_pokemon(row)
+    # rolls_dict: dict[int, list[int]] = {}
+    # sem = asyncio.Semaphore(CONCURRENCY)
+    # tasks = [process_row(idx, line, rolls_dict, sem) for idx, line in enumerate(lines)]
+    # _ = await asyncio.gather(*tasks)
 
-        with open("data.json", "w") as f:
-            _ = f.write(
-                json.dumps(
-                    {
-                        "attacking_pokemon": attacking.to_json(),
-                        "defending_pokemon": defending.to_json(),
-                    }
-                )
-            )
+    # rolls: list[list[int]] = [[] for _ in range(len(lines))]
+    # for idx, roll in rolls_dict.items():
+    #     rolls[idx] = roll
 
-        child = subprocess.run(["bun", "run", "index.ts"])
-        if child.returncode != 0:
-            print(attacking.name, defending.name)
-            raise Exception("Failed to run calc")
-
-        local_rolls: list[int] = []
-        with open("output.json", "r") as f:
-            local_rolls = cast(list[int], json.load(f))
-        rolls.append(local_rolls)
+    rolls = process_rows(lines)
 
     with open("rolls.csv", "w") as f:
         for roll in rolls:
@@ -262,4 +306,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
