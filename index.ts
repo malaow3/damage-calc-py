@@ -62,8 +62,9 @@ function setStats(raw_stats: Stats): CalcStats {
 }
 
 async function main() {
-  const input = process.argv[2] as string;
-  const data_json = JSON.parse(input) as unknown as DataFile[];
+  // const input = process.argv[2] as string;
+  const input = Bun.file("data.json");
+  const data_json = (await input.json()) as unknown as DataFile[];
 
   const return_rolls: number[][] = [];
 
@@ -120,7 +121,8 @@ async function main() {
       return_rolls.push(rolls as number[]);
     }
   }
-  console.log(JSON.stringify(return_rolls));
+  const output = Bun.file("output.json");
+  output.write(JSON.stringify(return_rolls));
 }
 
 main();

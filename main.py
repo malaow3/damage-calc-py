@@ -268,15 +268,16 @@ def process_rows(lines: list[str]) -> list[list[int]]:
             }
         )
 
-    child = subprocess.run(
-        ["bun", "run", "index.ts", json.dumps(data)], capture_output=True
-    )
+    with open("data.json", "w") as f:
+        f.write(json.dumps(data))
+
+    child = subprocess.run(["bun", "run", "index.ts"])
     if child.returncode != 0:
         raise Exception("Failed to run calc")
 
-    output: str = child.stdout.decode("utf-8").strip()
-
     local_rolls: list[list[int]] = []
+    with open("output.json", "r") as f:
+        output = f.read()
     local_rolls = cast(list[list[int]], json.loads(output))
     return local_rolls
 
