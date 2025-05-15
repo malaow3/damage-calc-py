@@ -88,8 +88,8 @@ function autosetTerrain(ability: string, i: number) {
 }
 
 async function main() {
-  // const input = process.argv[2] as string;
-  const input = Bun.file("data.json");
+  const number = process.argv[2] as string;
+  const input = Bun.file(`data-${number}.json`);
   const data_json = (await input.json()) as unknown as DataFile[];
 
   const return_rolls: number[][] = [];
@@ -115,8 +115,8 @@ async function main() {
       defending_tera_type = defending_pokemon.tera_type as unknown as TypeName;
     }
 
-    console.log(attacking_pokemon);
-    console.log(defending_pokemon);
+    // console.log(attacking_pokemon);
+    // console.log(defending_pokemon);
 
     autosetTerrain(attacking_pokemon.ability, 0);
     autosetTerrain(defending_pokemon.ability, 1);
@@ -181,7 +181,7 @@ async function main() {
     if (data.terrain_override) {
       terrain = data.terrain_override as Terrain;
     }
-    console.log(`Terrain: ${terrain}`);
+    // console.log(`Terrain: ${terrain}`);
 
     const result = calculate(
       gen,
@@ -201,7 +201,7 @@ async function main() {
       return_rolls.push(rolls as number[]);
     }
   }
-  const output = Bun.file("output.json");
+  const output = Bun.file(`output-${number}.json`);
   output.write(JSON.stringify(return_rolls));
 }
 

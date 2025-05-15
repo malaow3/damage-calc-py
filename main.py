@@ -1,10 +1,11 @@
-import asyncio
+import argparse
+import glob
 import json
+import os
 import subprocess
 from dataclasses import dataclass, field
+from multiprocessing import Manager, Process
 from typing import Any, cast
-
-# CONCURRENCY = 8
 
 
 @dataclass
@@ -229,32 +230,8 @@ def pokemon_from_paste(paste: str) -> Pokemon:
     )
 
 
-async def process_row(
-    idx: int, line: str, rolls_dict: dict[int, list[int]], sem: asyncio.Semaphore
-):
-    async with sem:
-        row = line.split(",")
-        attacking, defending = csv_row_to_pokemon(row)
-
-        input = json.dumps(
-            {
-                "attacking_pokemon": attacking.to_json(),
-                "defending_pokemon": defending.to_json(),
-            }
-        )
-        child = subprocess.run(["bun", "run", "index.ts", input], capture_output=True)
-        if child.returncode != 0:
-            print(attacking.name, defending.name)
-            raise Exception("Failed to run calc")
-
-        output: str = child.stdout.decode("utf-8").strip()
-
-        local_rolls: list[int] = []
-        local_rolls = cast(list[int], json.loads(output))
-        rolls_dict[idx] = local_rolls
-
-
-def process_rows(lines: list[str]) -> list[list[int]]:
+def process_rows(lines: list[str], i, return_dict) -> None:
+    print(f"Processing bucket {i}")
     data: list[dict[str, Any]] = []
     for line in lines:
         if len(line) == 0:
@@ -268,42 +245,65 @@ def process_rows(lines: list[str]) -> list[list[int]]:
             }
         )
 
-    with open("data.json", "w") as f:
+    with open(f"data-{i}.json", "w") as f:
         f.write(json.dumps(data))
 
-    child = subprocess.run(["bun", "run", "index.ts"])
+    child = subprocess.run(["bun", "run", "index.ts", str(i)])
     if child.returncode != 0:
         raise Exception("Failed to run calc")
 
     local_rolls: list[list[int]] = []
-    with open("output.json", "r") as f:
+    with open(f"output-{i}.json", "r") as f:
         output = f.read()
     local_rolls = cast(list[list[int]], json.loads(output))
-    return local_rolls
+    return_dict[i] = local_rolls
+    print(f"Finished bucket {i}")
 
 
-async def main():
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--keep", action="store_true")
+    args = parser.parse_args()
+
     with open("data.csv", "r") as f:
         data = f.read()
     lines = data.split("\n")
     # skip header
     lines = lines[1:]
 
-    # rolls_dict: dict[int, list[int]] = {}
-    # sem = asyncio.Semaphore(CONCURRENCY)
-    # tasks = [process_row(idx, line, rolls_dict, sem) for idx, line in enumerate(lines)]
-    # _ = await asyncio.gather(*tasks)
+    bucket_size = len(lines) // 8
+    buckets = [lines[i * bucket_size : (i + 1) * bucket_size] for i in range(8)]
 
-    # rolls: list[list[int]] = [[] for _ in range(len(lines))]
-    # for idx, roll in rolls_dict.items():
-    #     rolls[idx] = roll
+    threads: list[Process] = []
+    manager = Manager()
 
-    rolls = process_rows(lines)
+    results = manager.dict()
+
+    for i in range(8):
+        p = Process(target=process_rows, args=(buckets[i], i, results))
+        threads.append(p)
+        p.start()
+
+    for p in threads:
+        p.join()
+
+    rolls = []
+    keys: list[int] = sorted(results.keys())
+    for key in keys:
+        rolls.extend(results[key])
 
     with open("rolls.csv", "w") as f:
         for roll in rolls:
             roll_str = list(map(lambda x: str(x), roll))
             _ = f.write(",".join(roll_str) + "\n")
+
+    if not args.keep:
+        data_files = glob.glob("data-*.json")
+        for data_file in data_files:
+            os.remove(data_file)
+        output_files = glob.glob("output-*.json")
+        for output_file in output_files:
+            os.remove(output_file)
 
 
 def example():
@@ -362,4 +362,4 @@ EVs: 252 Atk / 4 Def / 252 Spe
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
