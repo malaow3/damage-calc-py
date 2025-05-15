@@ -260,6 +260,11 @@ def process_rows(lines: list[str], i, return_dict) -> None:
     print(f"Finished bucket {i}")
 
 
+def contiguous_chunkify(lst, n):
+    k, m = divmod(len(lst), n)
+    return [lst[i * k + min(i, m) : (i + 1) * k + min(i + 1, m)] for i in range(n)]
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--keep", action="store_true")
@@ -271,8 +276,9 @@ def main():
     # skip header
     lines = lines[1:]
 
-    bucket_size = len(lines) // 8
-    buckets = [lines[i * bucket_size : (i + 1) * bucket_size] for i in range(8)]
+    buckets = contiguous_chunkify(lines, 8)
+    for i, b in enumerate(buckets):
+        print(f"Bucket {i} size: {len(b)}")
 
     threads: list[Process] = []
     manager = Manager()
