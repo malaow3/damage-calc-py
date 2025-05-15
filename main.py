@@ -142,10 +142,10 @@ def csv_row_to_pokemon(row: list[str]) -> tuple[Pokemon, Pokemon]:
 
 def pokemon_from_paste(paste: str) -> Pokemon:
     lines = paste.split("\n")
-    name_and_item = lines[0].split("@")
+    name_and_item = lines[0].split(" @ ")
     name = name_and_item[0]
     if len(name_and_item) > 1:
-        item = lines[0].split("@")[1]
+        item = lines[0].split(" @ ")[1]
     else:
         item = None
 
@@ -304,6 +304,61 @@ async def main():
         for roll in rolls:
             roll_str = list(map(lambda x: str(x), roll))
             _ = f.write(",".join(roll_str) + "\n")
+
+
+def example():
+    miraidon = """Miraidon @ Choice Specs
+Level: 50
+Modest Nature
+Tera Type: Fairy
+Ability: Hadron Engine
+EVs: 44 HP / 4 Def / 244 SpA / 12 SpD / 204 Spe
+- Electro Drift
+- Draco Meteor
+- Volt Switch
+- Dazzling Gleam
+    """
+
+    rillaboom = """Rillaboom @ Choice Band
+Level: 50
+Adamant Nature
+Ability: Grassy Surge
+EVs: 252 Atk / 4 Def / 252 Spe
+- Grassy Glide
+- Wood Hammer
+- U-turn
+- Knock Off
+    """
+
+    attacking = pokemon_from_paste(miraidon)
+    attacking.move = attacking.moves[0]
+    attacking.is_tera = False
+    defending = pokemon_from_paste(rillaboom)
+
+    with open("data.json", "w") as f:
+        f.write(
+            json.dumps(
+                [
+                    {
+                        "attacking_pokemon": attacking.to_json(),
+                        "defending_pokemon": defending.to_json(),
+                        "terrain_override": "Electric",
+                    }
+                ]
+            )
+        )
+    child = subprocess.run(["bun", "run", "index.ts"], capture_output=True)
+    if child.returncode != 0:
+        raise Exception("Failed to run calc")
+
+    output = child.stdout.decode("utf-8").strip()
+    print(output)
+
+    local_rolls: list[list[int]] = []
+    with open("output.json", "r") as f:
+        output = f.read()
+    local_rolls = cast(list[list[int]], json.loads(output))
+    return local_rolls
 
 
 if __name__ == "__main__":

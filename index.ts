@@ -1,5 +1,5 @@
 import { calculate, Generations, Pokemon, Move, Field } from "@smogon/calc";
-import type { TypeName } from "@smogon/calc/dist/data/interface";
+import type { Terrain, TypeName } from "@smogon/calc/dist/data/interface";
 
 type Stats = {
   hp?: number;
@@ -36,6 +36,7 @@ type PokemonData = {
 type DataFile = {
   attacking_pokemon: PokemonData;
   defending_pokemon: PokemonData;
+  terrain_override?: string;
 };
 
 function setStats(raw_stats: Stats): CalcStats {
@@ -59,6 +60,31 @@ function setStats(raw_stats: Stats): CalcStats {
     stats.spe = raw_stats.speed;
   }
   return stats;
+}
+
+const lastAutoTerrain = ["", ""];
+function autosetTerrain(ability: string, i: number) {
+  const currentTerrain = "No terrain";
+  if (lastAutoTerrain.indexOf(currentTerrain) === -1) {
+    lastAutoTerrain[1 - i] = "";
+  }
+  switch (ability) {
+    case "Electric Surge":
+    case "Hadron Engine":
+      lastAutoTerrain[i] = "Electric";
+      break;
+    case "Grassy Surge":
+      lastAutoTerrain[i] = "Grassy";
+      break;
+    case "Misty Surge":
+      lastAutoTerrain[i] = "Misty";
+      break;
+    case "Psychic Surge":
+      lastAutoTerrain[i] = "Psychic";
+      break;
+    default:
+      lastAutoTerrain[i] = "";
+  }
 }
 
 async function main() {
@@ -89,29 +115,83 @@ async function main() {
       defending_tera_type = defending_pokemon.tera_type as unknown as TypeName;
     }
 
+    console.log(attacking_pokemon);
+    console.log(defending_pokemon);
+
+    autosetTerrain(attacking_pokemon.ability, 0);
+    autosetTerrain(defending_pokemon.ability, 1);
+
     const gen = Generations.get(9);
+    const attacking_pokemon_object = new Pokemon(gen, attacking_pokemon.name, {
+      level: attacking_pokemon.level,
+      ability: attacking_pokemon.ability,
+      item: attacking_pokemon.item,
+      nature: attacking_pokemon.nature,
+      evs: attacking_stats,
+      ivs: attacking_ivs,
+      teraType: attacking_tera_type,
+    });
+    const defending_pokemon_object = new Pokemon(gen, defending_pokemon.name, {
+      level: defending_pokemon.level,
+      ability: defending_pokemon.ability,
+      item: defending_pokemon.item,
+      nature: defending_pokemon.nature,
+      evs: defending_stats,
+      ivs: defending_ivs,
+      teraType: defending_tera_type,
+    });
+
+    let terrain_string = "No Terrain";
+    if (
+      lastAutoTerrain[0] !== "No Terrain" &&
+      lastAutoTerrain[1] !== "No Terrain"
+    ) {
+      // Find which pokemon is SLOWER, then apply THAT terrain
+      const attacking_pokemon_speed = attacking_pokemon_object.rawStats.spe;
+      const defending_pokemon_speed = defending_pokemon_object.rawStats.spe;
+      if (attacking_pokemon_speed > defending_pokemon_speed) {
+        terrain_string = lastAutoTerrain[1] as string;
+      } else if (attacking_pokemon_speed < defending_pokemon_speed) {
+        terrain_string = lastAutoTerrain[0] as string;
+      } else {
+        // const idx = Math.floor(Math.random() * 2);
+        // terrain_string = lastAutoTerrain[idx] as string;
+
+        // Normally, this is a coin flip to decide, but for the sake of determinism, let's
+        // just use the attacking terrain
+        terrain_string = lastAutoTerrain[0] as string;
+      }
+    } else if (
+      lastAutoTerrain[0] !== "No Terrain" &&
+      lastAutoTerrain[1] === "No Terrain"
+    ) {
+      terrain_string = lastAutoTerrain[0] as string;
+    } else if (
+      lastAutoTerrain[0] === "No Terrain" &&
+      lastAutoTerrain[1] !== "No Terrain"
+    ) {
+      terrain_string = lastAutoTerrain[1] as string;
+    }
+
+    let terrain: Terrain | undefined = undefined;
+    if (terrain_string !== "No Terrain") {
+      terrain = terrain_string as Terrain;
+    }
+
+    if (data.terrain_override) {
+      terrain = data.terrain_override as Terrain;
+    }
+    console.log(`Terrain: ${terrain}`);
+
     const result = calculate(
       gen,
-      new Pokemon(gen, attacking_pokemon.name, {
-        level: attacking_pokemon.level,
-        ability: attacking_pokemon.ability,
-        item: attacking_pokemon.item,
-        nature: attacking_pokemon.nature,
-        evs: attacking_stats,
-        ivs: attacking_ivs,
-        teraType: attacking_tera_type,
-      }),
-      new Pokemon(gen, defending_pokemon.name, {
-        level: defending_pokemon.level,
-        ability: defending_pokemon.ability,
-        item: defending_pokemon.item,
-        nature: defending_pokemon.nature,
-        evs: defending_stats,
-        ivs: defending_ivs,
-        teraType: defending_tera_type,
-      }),
+      attacking_pokemon_object,
+      defending_pokemon_object,
       new Move(gen, attacking_pokemon.move),
-      new Field({ gameType: game_type }),
+      new Field({
+        gameType: game_type,
+        terrain: terrain,
+      }),
     );
 
     const rolls = result.damage;
